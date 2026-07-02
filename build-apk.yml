@@ -1,0 +1,56 @@
+name: Build Beep APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install Capacitor
+        run: npm install
+
+      - name: Generate Android project
+        run: npx cap add android
+
+      - name: Build the APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk Beep.apk
+
+      - name: Upload APK (Actions artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Beep-APK
+          path: Beep.apk
+
+      - name: Publish APK to Releases page
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Beep App (latest build)
+          body: Download Beep.apk below and open it on your Android phone to install.
+          files: Beep.apk
