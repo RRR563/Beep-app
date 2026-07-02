@@ -1,0 +1,92 @@
+name: Build Beep APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Extract zip and locate index.html
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          ZIP=$(find . -maxdepth 3 -name "*.zip" | head -1)
+          echo "Found zip: $ZIP"
+          unzip -o "$ZIP" -d extracted/
+          echo "=== Extracted files ==="
+          find extracted/ | sort
+          HTML=$(find extracted/ -name "index.html" | head -1)
+          echo "index.html at: $HTML"
+          echo "HTML=$HTML" >> $GITHUB_ENV
+
+      - name: Prepare build workspace
+        run: |
+          BUILD=/home/runner/beep-build
+          mkdir -p "$BUILD/www"
+          cp "$HTML" "$BUILD/www/index.html"
+          ls -lh "$BUILD/www"
+
+          echo '{"name":"beep","version":"1.0.0","private":true,"dependencies":{"@capacitor/android":"^8.4.1","@capacitor/cli":"^8.4.1","@capacitor/core":"^8.4.1"}}' > "$BUILD/package.json"
+          echo '{"appId":"com.beep.reminders","appName":"Beep","webDir":"www","server":{"androidScheme":"https"}}' > "$BUILD/capacitor.config.json"
+
+          echo "BUILD=$BUILD" >> $GITHUB_ENV
+
+      - name: Install Capacitor
+        run: |
+          cd "$BUILD"
+          npm install
+
+      - name: Add Android platform
+        run: |
+          cd "$BUILD"
+          npx cap add android
+
+      - name: Sync web assets into Android
+        run: |
+          cd "$BUILD"
+          npx cap sync android
+
+      - name: Build debug APK
+        run: |
+          cd "$BUILD/android"
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Copy APK to workspace
+        run: |
+          cp "$BUILD/android/app/build/outputs/apk/debug/app-debug.apk" "$GITHUB_WORKSPACE/Beep.apk"
+          ls -lh "$GITHUB_WORKSPACE/Beep.apk"
+
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Beep-APK
+          path: Beep.apk
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Beep App - latest build
+          body: Download Beep.apk below and tap to install on your Android phone.
+          files: Beep.apk
